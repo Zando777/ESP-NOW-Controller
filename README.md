@@ -26,6 +26,8 @@ A compact, battery-powered remote controller based on the ESP32-C3 microcontroll
 ### Display & Communication
 - **0.96" OLED Display**: I2C interface (GPIO 8/9)
 - **ESP32-C3**: Main microcontroller with ESP-NOW capabilities
+- **TP4056**: Lithium battery USBC charge board
+- **Mini Voltage Step-up Module**: Battery voltage to 5v boost converter
 - **18650 Battery**: 3.7V lithium-ion rechargeable battery
 
 ### Build Materials
@@ -34,7 +36,7 @@ A compact, battery-powered remote controller based on the ESP32-C3 microcontroll
 - 0.96" I2C OLED display
 - 18650 battery holder and protection circuit
 - Custom perfboard circuit
-- 3D-printed housing (PLA filament)
+- 3D-printed housing (PETG filament)
 
 ## Software Features
 
@@ -68,7 +70,7 @@ This project was completed in a single day, demonstrating rapid prototyping capa
 
 ### 2. 3D Printed Housing
 - Designed ergonomic handheld enclosure
-- Printed using PLA filament
+- Printed using PETG filament
 - Integrated mounting points for all components
 
 ### 3. Firmware Development
