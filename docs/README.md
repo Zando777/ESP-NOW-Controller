@@ -89,13 +89,10 @@ This project was completed in a single day, demonstrating rapid prototyping capa
 ### CAD Designs
 <div align="center">
 
-| Housing Design | Internal Layout | Component Placement |
-|---------------|----------------|-------------------|
-| ![CAD1](images/CAD1.png) | ![CAD2](images/CAD2.png) | ![CAD3](images/CAD3.png) |
 
-| Circuit Board | Assembly View | Final Design |
-|---------------|---------------|-------------|
-| ![CAD4](images/CAD4.png) | ![CAD5](images/CAD5.png) | ![CAD6](images/CAD6.png) |
+![CAD1](images/CAD1.png)  ![CAD2](images/CAD2.png)  ![CAD3](images/CAD3.png) 
+
+ ![CAD4](images/CAD4.png)  ![CAD5](images/CAD5.png)  ![CAD6](images/CAD6.png) 
 
 ![CAD7](images/CAD7.png)
 *Complete assembly rendering*
@@ -105,11 +102,11 @@ This project was completed in a single day, demonstrating rapid prototyping capa
 ### Build Photos
 <div align="center">
 
-| Circuit Assembly | Component Integration | Housing Assembly |
+| Electronics |  Rear 18650 Housing | Housing Assembly |
 |-----------------|---------------------|------------------|
 | ![IMG_8148](images/IMG_8148.jpg) | ![IMG_8150](images/IMG_8150.jpg) | ![IMG_8153](images/IMG_8153.jpg) |
 
-| Final Assembly | Display Interface | Complete Device |
+| Final Assembly | Perfboard wiring | Complete Device |
 |---------------|------------------|----------------|
 | ![IMG_8156](images/IMG_8156.jpg) | ![IMG_8159](images/IMG_8159.jpg) | ![IMG_8160](images/IMG_8160.jpg) |
 
@@ -188,12 +185,12 @@ esp_now_send(broadcastAddress, (uint8_t*)&controllerData, sizeof(controllerData)
   - Adafruit_GFX
   - Adafruit_SSD1306
   - Arduino Preferences (for NVS storage)
-- **CAD Software**: Used for housing design
+- **Fusion360 CAD**: Used for housing design
 - **3D Printer**: FDM printer with PLA filament
 
 ## Future Enhancements
 
-- Haptic feedback for button presses
+- Audio feedback for button presses
 - Additional analog inputs
 - Bluetooth Low Energy support
 - Customizable button mappings
