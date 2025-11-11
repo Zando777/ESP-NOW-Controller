@@ -27,7 +27,7 @@ extern uint8_t receiverMAC[6];
 extern JoystickData joystickData;
 extern bool espNowReady;
 extern unsigned long lastSendTime;
-extern int lastSendStatus;  // -1: not sent, 0: success, 1: failed
+extern String lastSendStatus;
 
 // ============================================
 // FUNCTION PROTOTYPES
@@ -35,9 +35,9 @@ extern int lastSendStatus;  // -1: not sent, 0: success, 1: failed
 
 void initESPNow();
 void sendJoystickData();
-void onDataSent(const uint8_t *mac_addr, esp_now_send_status_t status);
+void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status);
+void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len);
 bool parseMAC(const char* str, uint8_t* macAddr);
 void handleSerialCommands();
-void printESPNowStatus();
 
 #endif // ESPNOW_H

@@ -135,17 +135,17 @@ void drawButtonStatus() {
 
 void drawESPNowStatus() {
   extern bool espNowReady;
-  extern int lastSendStatus;
+  extern String lastSendStatus;
   
   // ESP-NOW Status Indicator (top right corner)
   if (espNowReady) {
     display.setCursor(100, 0);
     display.setTextSize(1);
     display.print(F("ESP"));
-    if (lastSendStatus == 0) {
+    if (lastSendStatus == "Delivery Success") {
       display.drawCircle(120, 4, 2, SSD1306_WHITE);
       display.fillCircle(120, 4, 1, SSD1306_WHITE);
-    } else if (lastSendStatus == 1) {
+    } else {
       display.drawCircle(120, 4, 2, SSD1306_WHITE);
     }
   }

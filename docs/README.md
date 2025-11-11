@@ -1,132 +1,68 @@
-# ESP-NOW Controller# ESP-NOW Controller
+# ESP-NOW Controller
 
+![ESP-NOW Controller](images/IMG_8160.jpg)
 
+A compact, battery-powered remote controller based on the ESP32-C3 microcontroller, featuring ESP-NOW wireless communication for controlling robots and other devices. This project was completed as a 1-day build, including circuit design, 3D-printed housing, programming, and assembly.
 
-A compact, battery-powered remote controller based on the ESP32-C3 microcontroller, featuring ESP-NOW wireless communication for controlling robots and other devices.![ESP-NOW Controller](images/IMG_8160.jpg)
+## Features
 
-
-
-## Project StructureA compact, battery-powered remote controller based on the ESP32-C3 microcontroller, featuring ESP-NOW wireless communication for controlling robots and other devices. This project was completed as a 1-day build, including circuit design, 3D-printed housing, programming, and assembly.
-
-
-
-```## Features
-
-ESP-NOW Controller/
-
-├── firmware/- **ESP32-C3 Microcontroller**: Low-power, WiFi-capable microcontroller
-
-│   ├── controller/          # Main controller with OLED + joysticks- **ESP-NOW Communication**: Direct device-to-device wireless communication (no WiFi network required)
-
-│   │   ├── src/            # Controller source code- **Dual Analog Joysticks**: Precise control with full-range calibration
-
-│   │   ├── include/        # Controller header files- **OLED Display**: Real-time visual feedback with graphical bar indicators
-
-│   │   └── platformio.ini  # Controller build configuration- **18650 Battery Power**: Rechargeable lithium-ion battery with efficient power management
-
-│   └── receiver/           # ESP-NOW receiver device- **Compact Design**: Ergonomic 3D-printed housing for handheld operation
-
-│       ├── src/            # Receiver source code- **Calibration System**: Automated joystick calibration with persistent storage
-
-│       └── platformio.ini  # Receiver build configuration
-
-├── docs/                   # Documentation## Hardware Components
-
-│   ├── README.md          # Main documentation
-
-│   ├── STARTUP_GUIDE.md   # Setup and calibration guide### Controller Inputs
-
-│   ├── UPLOAD_PROFILES.md # Upload configuration guide- **Left Joystick**: X/Y axis control (GPIO 4/3)
-
-│   └── images/            # Screenshots and diagrams- **Right Joystick**: X/Y axis control (GPIO 2/1)
-
-├── platformio.ini         # Main project config (reference only)- **Left Button**: Digital input (GPIO 5)
-
-├── .gitignore            # Git ignore rules- **Right Button**: Digital input (GPIO 0)
-
-└── .vscode/              # VS Code workspace settings- **Aux Switch**: Additional control input (GPIO 6)
-
-```
-
-### Display & Communication
-
-## Quick Start- **0.96" OLED Display**: I2C interface (GPIO 8/9)
-
-- **ESP32-C3**: Main microcontroller with ESP-NOW capabilities
-
-### Building the Controller- **TP4056**: Lithium battery USBC charge board
-
-```bash- **Mini Voltage Step-up Module**: Battery voltage to 5v boost converter
-
-cd firmware/controller- **18650 Battery**: 3.7V lithium-ion rechargeable battery
-
-pio run --target upload
-
-```### Build Materials
-
-- ESP32-C3-DevKitM-1 development board
-
-### Building the Receiver- KY-023 analog joysticks (x2)
-
-```bash- 0.96" I2C OLED display
-
-cd firmware/receiver- 18650 battery holder and protection circuit
-
-pio run --target upload- Custom perfboard circuit
-
-```- 3D-printed housing (PETG filament)
-
-
-
-## Features## Software Features
-
-
-
-- **ESP32-C3 Microcontroller**: Low-power, WiFi-capable microcontroller### Display Interface
-
-- **ESP-NOW Communication**: Direct device-to-device wireless communication- Real-time graphical bar indicators for all joystick axes
-
-- **Dual Analog Joysticks**: Precise control with full-range calibration- Center calibration markers
-
-- **OLED Display**: Real-time visual feedback with graphical bar indicators- Digital button status indicators
-
-- **18650 Battery Power**: Rechargeable lithium-ion battery with efficient power management- Raw analog value display
-
-- **Compact Design**: Ergonomic 3D-printed housing for handheld operation- Calibration mode interface
-
+- **ESP32-C3 Microcontroller**: Low-power, WiFi-capable microcontroller
+- **ESP-NOW Communication**: Direct device-to-device wireless communication (no WiFi network required)
+- **Dual Analog Joysticks**: Precise control with full-range calibration
+- **OLED Display**: Real-time visual feedback with graphical bar indicators
+- **18650 Battery Power**: Rechargeable lithium-ion battery with efficient power management
+- **Compact Design**: Ergonomic 3D-printed housing for handheld operation
 - **Calibration System**: Automated joystick calibration with persistent storage
 
+## Hardware Components
+
+### Controller Inputs
+- **Left Joystick**: X/Y axis control (GPIO 4/3)
+- **Right Joystick**: X/Y axis control (GPIO 2/1)
+- **Left Button**: Digital input (GPIO 5)
+- **Right Button**: Digital input (GPIO 0)
+- **Aux Switch**: Additional control input (GPIO 6)
+
+### Display & Communication
+- **0.96" OLED Display**: I2C interface (GPIO 8/9)
+- **ESP32-C3**: Main microcontroller with ESP-NOW capabilities
+- **TP4056**: Lithium battery USBC charge board
+- **Mini Voltage Step-up Module**: Battery voltage to 5v boost converter
+- **18650 Battery**: 3.7V lithium-ion rechargeable battery
+
+### Build Materials
+- ESP32-C3-DevKitM-1 development board
+- KY-023 analog joysticks (x2)
+- 0.96" I2C OLED display
+- 18650 battery holder and protection circuit
+- Custom perfboard circuit
+- 3D-printed housing (PETG filament)
+
+## Software Features
+
+### Display Interface
+- Real-time graphical bar indicators for all joystick axes
+- Center calibration markers
+- Digital button status indicators
+- Raw analog value display
+- Calibration mode interface
+
 ### Calibration System
-
-## Documentation- Automated 9-step calibration process
-
+- Automated 9-step calibration process
 - Persistent storage using ESP32 NVS (survives power cycles)
+- Deadzone implementation for stable center position
+- Range validation and error correction
 
-See the `docs/` directory for detailed documentation:- Deadzone implementation for stable center position
-
-- [Main Documentation](docs/README.md)- Range validation and error correction
-
-- [Startup Guide](docs/STARTUP_GUIDE.md)
-
-- [Upload Profiles](docs/UPLOAD_PROFILES.md)### ESP-NOW Communication
-
+### ESP-NOW Communication
 - Direct peer-to-peer wireless communication
-
-## Development- Low latency for real-time control
-
+- Low latency for real-time control
 - No WiFi network dependency
+- Extensible for robot control applications
 
-Each firmware variant is a separate PlatformIO project:- Extensible for robot control applications
+## Build Process
 
-- Open `firmware/controller/` in VS Code for controller development
+This project was completed in a single day, demonstrating rapid prototyping capabilities:
 
-- Open `firmware/receiver/` in VS Code for receiver development## Build Process
-
-
-
-The main `platformio.ini` is for reference only and contains build instructions.</content>This project was completed in a single day, demonstrating rapid prototyping capabilities:
-
-<parameter name="filePath">/Users/alexandersteffen/Documents/Personal Repos/ESP-NOW Controller/README.md
 ### 1. Circuit Design & Assembly
 - Designed perfboard layout for ESP32-C3, joysticks, and OLED
 - Soldered components and connections
