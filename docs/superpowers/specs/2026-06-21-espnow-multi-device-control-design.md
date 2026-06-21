@@ -44,16 +44,33 @@ typedef struct __attribute__((packed)) {
 
 ### Joystick mapping (controller)
 
-- Left stick:  `x` = mapped left-stick X, `y` = mapped left-stick Y (strafe + forward).
-- Right stick: `rot` = mapped right-stick X (rotation). Right-stick Y reserved (unused in v1).
+Translation and rotation are split across the two sticks, following the standard
+twin-stick mecanum convention used in FRC/FTC and most game-pad robot control:
+
+- **Left stick = translation:** `y` = left-stick Y (forward/back), `x` = left-stick
+  X (strafe left/right).
+- **Right stick = rotation:** `rot` = right-stick X (yaw turn). Right-stick Y
+  reserved (unused in v1).
 - `speed`: fixed at 200 in v1. Proportional control already comes from stick
   magnitude (x/y/rot are continuous -100..100), so a fixed master cap is enough.
   `speed` is a named constant so it is trivial to change or wire to an axis later.
 - `buttons`: left SW, right SW, aux toggle packed into the bitfield.
 
+This matches the Mecanum robot's existing wheel-mixing in `calculateMotorSpeeds()`,
+which is the standard mecanum formula, so the controller sends `x/y/rot` and the
+robot's kinematics is unchanged:
+
+```
+FL = y + x + rot     FR = y - x - rot
+BL = y - x + rot     BR = y + x - rot
+```
+
 Existing calibration and ADC→range mapping in the controller is reused to produce
 the -100..100 values (currently it maps to 0..58 bar units; a -100..100 signed
 mapping helper is added alongside, the existing bar mapping is left for the UI).
+
+Reference: standard two-joystick mecanum control — left stick translates, right
+stick turns (gm0.org Mecanum drive tutorial; Chief Delphi).
 
 ## 2. Multi-device list and selection (controller)
 
