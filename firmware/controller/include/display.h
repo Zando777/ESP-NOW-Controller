@@ -20,5 +20,6 @@ void drawJoystickBars();
 void drawButtonStatus();
 void drawESPNowStatus();
 void displayCalibrationScreen();
+void displayDeviceMenu(int highlight);
 
 #endif // DISPLAY_H

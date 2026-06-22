@@ -1,206 +1,257 @@
 #include "espnow.h"
 #include "config.h"
+#include "joystick.h"
+#include "calibration.h"
 #include <Arduino.h>
 #include <esp_now.h>
 #include <WiFi.h>
 #include <esp_wifi.h>
 
 // ============================================
-// MAC ADDRESSES (confirmed via MAC reader)
+// DEVICE LIST (static)
 // ============================================
-// Controller (this device, cu.usbmodem141401): ec:da:3b:bd:cd:74
-// Receiver (target device, cu.usbmodem141201): 88:56:a6:64:a1:e8
+// Add controllable devices here. channel 0 = unknown (found by sweep).
+ControlDevice devices[] = {
+  {"Mecanum", {0x00, 0x70, 0x07, 0x84, 0x9E, 0xB0}, 0, false},
+  {"Test Rx", {0x88, 0x56, 0xA6, 0x64, 0xA1, 0xE8}, 0, false},
+};
+int numDevices = sizeof(devices) / sizeof(devices[0]);
+int selectedDevice = 0;
 
-uint8_t receiverMAC[6] = {0x88, 0x56, 0xA6, 0x64, 0xA1, 0xE8};
-
 // ============================================
-// GLOBAL VARIABLES
+// GLOBAL STATE
 // ============================================
-JoystickData joystickData = {0};
 bool espNowReady = false;
-unsigned long lastSendTime = 0;
 String lastSendStatus = "Not sent";
 
+static unsigned long lastSendTime = 0;
+static uint8_t txSeq = 0;
+
+// Time of the most recent successful delivery (ACK). Used to decide when the
+// link is genuinely dead vs. just dropping the odd ACK.
+static volatile unsigned long lastSuccessMs = 0;
+
+// Probe result for channel sweep, written by the send callback.
+static volatile bool probeDone = false;
+static volatile bool probeOk = false;
+
 // ============================================
-// CALLBACK: Data Sent
+// SEND CALLBACK
 // ============================================
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
-  if (status == ESP_NOW_SEND_SUCCESS) {
-    lastSendStatus = "Delivery Success";
-  } else {
-    lastSendStatus = "Delivery Failed";
-  }
+  bool ok = (status == ESP_NOW_SEND_SUCCESS);
+  probeOk = ok;
+  probeDone = true;
+  lastSendStatus = ok ? "Delivery Success" : "Delivery Failed";
+  if (ok) lastSuccessMs = millis();
 }
 
 // ============================================
-// CALLBACK: Data Received (for two-way comm)
+// PEER MANAGEMENT
 // ============================================
-void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
-  Serial.printf("[RECV] Received %d bytes from receiver\n", len);
-  if (len == sizeof(JoystickData)) {
-    JoystickData receivedData;
-    memcpy(&receivedData, incomingData, sizeof(JoystickData));
-    Serial.printf("[RECV] L(%d,%d) R(%d,%d)\n", 
-      receivedData.leftX, receivedData.leftY,
-      receivedData.rightX, receivedData.rightY);
+// Peer is registered with channel 0 (use current radio channel); the radio
+// channel is set explicitly with esp_wifi_set_channel before sending.
+static void setPeer(const uint8_t *mac) {
+  if (esp_now_is_peer_exist(mac)) return;
+  esp_now_peer_info_t peer = {};
+  memcpy(peer.peer_addr, mac, 6);
+  peer.channel = 0;
+  peer.encrypt = false;
+  esp_now_add_peer(&peer);
+}
+
+// Set the radio channel and wait until it actually takes effect. Sending a
+// probe before the channel switch completes makes the sweep lock the wrong
+// channel (off by one), so confirm via read-back.
+static void setRadioChannel(uint8_t ch) {
+  esp_wifi_set_channel(ch, WIFI_SECOND_CHAN_NONE);
+  uint8_t cur = 0;
+  wifi_second_chan_t sc;
+  for (int i = 0; i < 20; i++) {
+    esp_wifi_get_channel(&cur, &sc);
+    if (cur == ch) break;
+    delay(5);
   }
+  delay(10);  // small extra settle for the PHY
+}
+
+static bool sendProbe(const uint8_t *mac) {
+  ControlCommand cmd = {};
+  cmd.version = CONTROL_PROTOCOL_VERSION;
+  cmd.seq = txSeq++;
+  cmd.speed = 0;  // zeroed motion
+  probeDone = false;
+  probeOk = false;
+  if (esp_now_send(mac, (uint8_t *)&cmd, sizeof(cmd)) != ESP_OK) return false;
+  unsigned long start = millis();
+  while (!probeDone && millis() - start < 50) {
+    delay(1);
+  }
+  return probeDone && probeOk;
+}
+
+// Sweep channels 1..13 to find the one the device is reachable on.
+// Returns the channel, or 0 if not found.
+// Note: allow the radio to settle on the new channel before probing, otherwise
+// the probe transmits on the previous channel and the ACK is missed.
+static uint8_t sweepChannel(const uint8_t *mac) {
+  for (uint8_t ch = 1; ch <= 13; ch++) {
+    setRadioChannel(ch);
+    // Two attempts per channel for robustness against a single dropped frame.
+    if (sendProbe(mac) || sendProbe(mac)) {
+      Serial.printf("[ESP-NOW] Found device on channel %d\n", ch);
+      return ch;
+    }
+  }
+  Serial.println("[ESP-NOW] Channel sweep found no device");
+  return 0;
+}
+
+// ============================================
+// PUBLIC API
+// ============================================
+bool selectDevice(int index) {
+  if (index < 0 || index >= numDevices) return false;
+
+  // Remove the previous peer so only the active device is registered.
+  if (selectedDevice >= 0 && selectedDevice < numDevices) {
+    esp_now_del_peer(devices[selectedDevice].mac);
+  }
+  selectedDevice = index;
+
+  if (!espNowReady) return false;
+
+  ControlDevice &dev = devices[index];
+  setPeer(dev.mac);
+
+  // Use cached channel if known, else sweep.
+  if (dev.channel != 0) {
+    setRadioChannel(dev.channel);
+    if (sendProbe(dev.mac) || sendProbe(dev.mac)) {
+      dev.linkOk = true;
+      lastSuccessMs = millis();
+      Serial.printf("[ESP-NOW] Selected %s on cached channel %d\n", dev.name, dev.channel);
+      return true;
+    }
+  }
+
+  uint8_t ch = sweepChannel(dev.mac);
+  if (ch != 0) {
+    dev.channel = ch;
+    dev.linkOk = true;
+    lastSuccessMs = millis();
+    Serial.printf("[ESP-NOW] Selected %s, locked channel %d\n", dev.name, ch);
+    return true;
+  }
+  dev.linkOk = false;
+  Serial.printf("[ESP-NOW] Selected %s but link not found\n", dev.name);
+  return false;
 }
 
 void initESPNow() {
-  Serial.println("\n\n🔧 [ESPNOW_INIT] Starting initialization...");
-  Serial.flush();
-  
-  Serial.println("[ESPNOW_INIT] Step 1: Setting WiFi mode to STATION");
+  // STA mode but NOT associated to any AP, so we can freely set the radio
+  // channel to match whichever device we are talking to.
   WiFi.mode(WIFI_STA);
-  Serial.println("[ESPNOW_INIT] ✅ WiFi mode set");
-  Serial.flush();
-  
-  Serial.print("[ESPNOW_INIT] Controller MAC: ");
-  Serial.println(WiFi.macAddress());
-  Serial.flush();
-  
-  Serial.println("[ESPNOW_INIT] Step 2: Initializing WiFi radio...");
-  WiFi.begin();  // Initialize WiFi hardware
+  WiFi.disconnect();
   delay(100);
-  Serial.println("[ESPNOW_INIT] ✅ WiFi radio initialized");
-  Serial.flush();
-  
-  Serial.println("[ESPNOW_INIT] Step 3: Disabling WiFi power save...");
   esp_wifi_set_ps(WIFI_PS_NONE);
-  Serial.println("[ESPNOW_INIT] ✅ WiFi power save disabled");
-  Serial.flush();
-  
-  Serial.println("[ESPNOW_INIT] Step 4: Calling esp_now_init()...");
-  Serial.flush();
-  delay(50);
-  
-  esp_err_t initErr = esp_now_init();
-  
-  Serial.printf("[ESPNOW_INIT] esp_now_init returned: %d\n", initErr);
-  Serial.flush();
-  
-  if (initErr != ESP_OK) {
-    Serial.printf("[ESPNOW_INIT] ❌ ESP-NOW initialization FAILED! Error code: %d\n", initErr);
+
+  Serial.print("[ESP-NOW] Controller MAC: ");
+  Serial.println(WiFi.macAddress());
+
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("[ESP-NOW] init FAILED");
     espNowReady = false;
     return;
   }
-  Serial.println("[ESPNOW_INIT] ✅ ESP-NOW core initialized");
-  Serial.flush();
-  
-  Serial.println("[ESPNOW_INIT] Step 5: Registering send callback...");
   esp_now_register_send_cb(esp_now_send_cb_t(OnDataSent));
-  Serial.println("[ESPNOW_INIT] ✅ Send callback registered");
-  Serial.flush();
-  
-  Serial.println("[ESPNOW_INIT] Step 6: Registering receive callback...");
-  esp_now_register_recv_cb(esp_now_recv_cb_t(OnDataRecv));
-  Serial.println("[ESPNOW_INIT] ✅ Receive callback registered");
-  Serial.flush();
-  
-  Serial.println("[ESPNOW_INIT] Step 7: Adding receiver peer...");
-  esp_now_peer_info_t peerInfo = {};
-  memcpy(peerInfo.peer_addr, receiverMAC, 6);
-  peerInfo.channel = 0;
-  peerInfo.encrypt = false;
-  
-  Serial.printf("[ESPNOW_INIT] Peer MAC: %02X:%02X:%02X:%02X:%02X:%02X, Channel: %d\n",
-    receiverMAC[0], receiverMAC[1], receiverMAC[2],
-    receiverMAC[3], receiverMAC[4], receiverMAC[5],
-    peerInfo.channel);
-  Serial.flush();
-  
-  esp_err_t addPeerErr = esp_now_add_peer(&peerInfo);
-  Serial.printf("[ESPNOW_INIT] esp_now_add_peer returned: %d\n", addPeerErr);
-  Serial.flush();
-  
-  if (addPeerErr != ESP_OK) {
-    Serial.println("[ESPNOW_INIT] ❌ Failed to add peer");
-    espNowReady = false;
-    return;
-  }
-  Serial.println("[ESPNOW_INIT] ✅ Peer added successfully");
-  Serial.flush();
-  
   espNowReady = true;
-  Serial.println("\n✅ [ESPNOW_INIT] COMPLETE - Ready to send!\n");
-  Serial.flush();
+  Serial.println("[ESP-NOW] Ready");
+
+  // Lock onto the default device.
+  selectDevice(selectedDevice);
 }
 
-void sendJoystickData() {
-  if (!espNowReady) {
-    static unsigned long lastErrorPrint = 0;
-    if (millis() - lastErrorPrint > 5000) {
-      Serial.println("[ERROR] ESP-NOW not ready, cannot send");
-      lastErrorPrint = millis();
-    }
-    return;
-  }
-  
-  // Only send every SEND_INTERVAL milliseconds
+void sendControlCommand() {
+  if (!espNowReady) return;
+
   unsigned long now = millis();
-  if (now - lastSendTime < SEND_INTERVAL) {
-    return;
-  }
+  if (now - lastSendTime < SEND_INTERVAL) return;
   lastSendTime = now;
-  
-  // Get current joystick values
+
   extern int leftX, leftY, rightX, rightY;
   extern bool leftButton, rightButton, auxSwitch;
-  
-  // Update data structure
-  joystickData.leftX = leftX;
-  joystickData.leftY = leftY;
-  joystickData.rightX = rightX;
-  joystickData.rightY = rightY;
-  joystickData.leftButton = leftButton;
-  joystickData.rightButton = rightButton;
-  joystickData.auxSwitch = auxSwitch;
-  
-  // Send data to receiver
-  esp_err_t result = esp_now_send(receiverMAC, (uint8_t *) &joystickData, sizeof(joystickData));
-  
-  // Debug output every 1 second
-  static unsigned long lastDebugTime = 0;
-  if (now - lastDebugTime > 1000) {
-    Serial.printf("[SEND] L(%d,%d) R(%d,%d) Btn(%d,%d,%d) | Status: %s\n",
-      leftX, leftY, rightX, rightY, 
-      leftButton, rightButton, auxSwitch,
-      lastSendStatus.c_str());
-    lastDebugTime = now;
-  }
-}
+  extern CalibrationData calibration;
 
-bool parseMAC(const char* str, uint8_t* macAddr) {
-  int parts[6];
-  if (sscanf(str, "%02x:%02x:%02x:%02x:%02x:%02x", 
-             &parts[0], &parts[1], &parts[2], 
-             &parts[3], &parts[4], &parts[5]) != 6) {
-    return false;
+  ControlCommand cmd;
+  cmd.version = CONTROL_PROTOCOL_VERSION;
+  cmd.seq = txSeq++;
+  cmd.x   = SIGN_X   * mapAxisSigned(leftX,  calibration.leftXMin,  calibration.leftXCenter,  calibration.leftXMax);
+  cmd.y   = SIGN_Y   * mapAxisSigned(leftY,  calibration.leftYMin,  calibration.leftYCenter,  calibration.leftYMax);
+  cmd.rot = SIGN_ROT * mapAxisSigned(rightX, calibration.rightXMin, calibration.rightXCenter, calibration.rightXMax);
+  cmd.speed = CONTROL_DEFAULT_SPEED;
+  cmd.buttons = (leftButton ? 0x01 : 0) | (rightButton ? 0x02 : 0) | (auxSwitch ? 0x04 : 0);
+
+  uint8_t *mac = devices[selectedDevice].mac;
+  esp_now_send(mac, (uint8_t *)&cmd, sizeof(cmd));
+
+  // Stable link indicator: linked if we have had an ACK recently. Individual
+  // dropped ACKs do not mean the command was lost (the robot still receives
+  // the data), so do NOT react to them.
+  devices[selectedDevice].linkOk = (now - lastSuccessMs < LINK_OK_MS);
+
+  // Re-acquire the channel ONLY after a sustained silence (the device was
+  // powered off, moved channel, or went out of range). Try the current
+  // channel first (instant) before falling back to a full sweep, so a brief
+  // drop does not cause a multi-second blocking sweep mid-drive.
+  static unsigned long lastReacquireMs = 0;
+  if (now - lastSuccessMs > LINK_DEAD_MS && now - lastReacquireMs > LINK_DEAD_MS) {
+    lastReacquireMs = now;
+    Serial.println("[ESP-NOW] Link silent, re-acquiring...");
+    if (sendProbe(mac) || sendProbe(mac)) {
+      lastSuccessMs = millis();  // still here, transient drop
+    } else {
+      uint8_t ch = sweepChannel(mac);
+      if (ch != 0) {
+        devices[selectedDevice].channel = ch;
+        lastSuccessMs = millis();
+      }
+    }
   }
-  for (int i = 0; i < 6; i++) {
-    macAddr[i] = parts[i];
-  }
-  return true;
 }
 
 void handleSerialCommands() {
-  if (Serial.available()) {
-    String cmd = Serial.readStringUntil('\n');
-    cmd.trim();
-    cmd.toUpperCase();
-    
-    if (cmd == "STATUS") {
-      Serial.println("\n=== ESP-NOW Status ===");
-      Serial.printf("Ready: %s\n", espNowReady ? "YES" : "NO");
-      Serial.printf("Last Status: %s\n", lastSendStatus.c_str());
-      Serial.printf("Receiver MAC: 88:56:A6:64:A1:E8\n");
-      Serial.println("====================\n");
+  if (!Serial.available()) return;
+  String cmd = Serial.readStringUntil('\n');
+  cmd.trim();
+  cmd.toUpperCase();
+
+  if (cmd == "STATUS") {
+    Serial.println("\n=== ESP-NOW Status ===");
+    Serial.printf("Ready: %s\n", espNowReady ? "YES" : "NO");
+    ControlDevice &d = devices[selectedDevice];
+    Serial.printf("Device: %s  ch:%d  link:%s\n",
+      d.name, d.channel, d.linkOk ? "OK" : "--");
+    Serial.printf("Last: %s\n", lastSendStatus.c_str());
+    Serial.println("====================\n");
+  } else if (cmd == "LIST") {
+    Serial.println("\n=== Devices ===");
+    for (int i = 0; i < numDevices; i++) {
+      Serial.printf("%s%d) %s  ch:%d  link:%s\n",
+        i == selectedDevice ? "* " : "  ",
+        i, devices[i].name, devices[i].channel,
+        devices[i].linkOk ? "OK" : "--");
     }
-    else if (cmd == "HELP") {
-      Serial.println("\n=== ESP-NOW Commands ===");
-      Serial.println("STATUS  - Show ESP-NOW status");
-      Serial.println("HELP    - Show this help message");
-      Serial.println("========================\n");
-    }
+    Serial.println("===============\n");
+  } else if (cmd.startsWith("SELECT ")) {
+    int idx = cmd.substring(7).toInt();
+    if (selectDevice(idx)) Serial.printf("Selected device %d\n", idx);
+    else Serial.println("Select failed");
+  } else if (cmd == "HELP") {
+    Serial.println("\n=== Commands ===");
+    Serial.println("STATUS    - link status");
+    Serial.println("LIST      - list devices");
+    Serial.println("SELECT n  - select device n");
+    Serial.println("================\n");
   }
 }

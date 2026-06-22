@@ -62,93 +62,92 @@ void displayCalibrationScreen() {
   display.println();
 }
 
+// Draw one joystick as a crosshair box with a dot at the stick position.
+// xbar/ybar are 0..ADC_MAP_MAX (centre = ADC_MAP_CENTER).
+static void drawStick(int x0, int y0, int sz, int xbar, int ybar, const char* label) {
+  display.drawRect(x0, y0, sz, sz, SSD1306_WHITE);
+  int cx = x0 + sz / 2;
+  int cy = y0 + sz / 2;
+  // Centre crosshair (reference)
+  display.drawLine(cx, y0 + 2, cx, y0 + sz - 2, SSD1306_WHITE);
+  display.drawLine(x0 + 2, cy, x0 + sz - 2, cy, SSD1306_WHITE);
+  // Dot position (invert Y so stick-up is up on screen)
+  int px = x0 + 3 + (int)((long)xbar * (sz - 6) / ADC_MAP_MAX);
+  int py = y0 + 3 + (int)((long)(ADC_MAP_MAX - ybar) * (sz - 6) / ADC_MAP_MAX);
+  display.fillCircle(px, py, 3, SSD1306_WHITE);
+  // Label centred under the box
+  int len = strlen(label) * 6;
+  display.setCursor(x0 + (sz - len) / 2, y0 + sz + 2);
+  display.print(label);
+}
+
 void drawJoystickBars() {
-  extern int leftX, leftY, rightX, rightY;
-  extern CalibrationData calibration;
-  
   int leftXBar, leftYBar, rightXBar, rightYBar;
   mapJoystickValues(leftXBar, leftYBar, rightXBar, rightYBar);
-  
-  // Left Joystick Section
-  display.setCursor(0, 0);
-  display.print(F("L-X"));
-  display.drawRect(20, 0, 60, 8, SSD1306_WHITE);
-  display.drawLine(50, 0, 50, 8, SSD1306_WHITE);
-  display.fillRect(21, 1, leftXBar, 6, SSD1306_WHITE);
-  display.setCursor(82, 0);
-  display.print(leftX);
-  
-  display.setCursor(0, 10);
-  display.print(F("L-Y"));
-  display.drawRect(20, 10, 60, 8, SSD1306_WHITE);
-  display.drawLine(50, 10, 50, 18, SSD1306_WHITE);
-  display.fillRect(21, 11, leftYBar, 6, SSD1306_WHITE);
-  display.setCursor(82, 10);
-  display.print(leftY);
-  
-  // Right Joystick Section
-  display.setCursor(0, 22);
-  display.print(F("R-X"));
-  display.drawRect(20, 22, 60, 8, SSD1306_WHITE);
-  display.drawLine(50, 22, 50, 30, SSD1306_WHITE);
-  display.fillRect(21, 23, rightXBar, 6, SSD1306_WHITE);
-  display.setCursor(82, 22);
-  display.print(rightX);
-  
-  display.setCursor(0, 32);
-  display.print(F("R-Y"));
-  display.drawRect(20, 32, 60, 8, SSD1306_WHITE);
-  display.drawLine(50, 32, 50, 40, SSD1306_WHITE);
-  display.fillRect(21, 33, rightYBar, 6, SSD1306_WHITE);
-  display.setCursor(82, 32);
-  display.print(rightY);
-  
-  // Divider line
-  display.drawLine(0, 44, 127, 44, SSD1306_WHITE);
+
+  // Left stick = translation, right stick = rotation
+  drawStick(4, 13, 38, leftXBar, leftYBar, "MOVE");
+  drawStick(86, 13, 38, rightXBar, rightYBar, "TURN");
 }
 
 void drawButtonStatus() {
   extern bool leftButton, rightButton, auxSwitch;
-  
-  // Checkboxes for buttons at the bottom
-  display.setCursor(0, 48);
-  display.print(F("L"));
-  display.drawRect(10, 48, 10, 10, SSD1306_WHITE);
-  if (leftButton) {
-    display.fillRect(12, 50, 6, 6, SSD1306_WHITE);
-  }
-  
-  display.setCursor(25, 48);
-  display.print(F("R"));
-  display.drawRect(35, 48, 10, 10, SSD1306_WHITE);
-  if (rightButton) {
-    display.fillRect(37, 50, 6, 6, SSD1306_WHITE);
-  }
-  
-  display.setCursor(50, 48);
-  display.print(F("AUX"));
-  display.drawRect(73, 48, 10, 10, SSD1306_WHITE);
-  if (auxSwitch) {
-    display.fillRect(75, 50, 6, 6, SSD1306_WHITE);
+
+  // Button indicators in the middle column, between the two stick boxes.
+  struct Btn { const char* l; bool on; } btns[3] = {
+    {"L", leftButton}, {"R", rightButton}, {"A", auxSwitch}
+  };
+  for (int i = 0; i < 3; i++) {
+    int y = 16 + i * 13;
+    display.setCursor(50, y + 1);
+    display.print(btns[i].l);
+    display.drawRect(60, y, 9, 9, SSD1306_WHITE);
+    if (btns[i].on) display.fillRect(62, y + 2, 5, 5, SSD1306_WHITE);
   }
 }
 
 void drawESPNowStatus() {
-  extern bool espNowReady;
-  extern String lastSendStatus;
-  
-  // ESP-NOW Status Indicator (top right corner)
-  if (espNowReady) {
-    display.setCursor(100, 0);
-    display.setTextSize(1);
-    display.print(F("ESP"));
-    if (lastSendStatus == "Delivery Success") {
-      display.drawCircle(120, 4, 2, SSD1306_WHITE);
-      display.fillCircle(120, 4, 1, SSD1306_WHITE);
-    } else {
-      display.drawCircle(120, 4, 2, SSD1306_WHITE);
+  // Top status bar: device name on the left, link indicator on the right.
+  ControlDevice &dev = devices[selectedDevice];
+
+  display.setCursor(0, 0);
+  display.print(dev.name);
+
+  // Link indicator: filled circle = linked, hollow = no link.
+  if (dev.linkOk) {
+    display.fillCircle(122, 3, 3, SSD1306_WHITE);
+  } else {
+    display.drawCircle(122, 3, 3, SSD1306_WHITE);
+  }
+
+  display.drawLine(0, 10, 127, 10, SSD1306_WHITE);
+}
+
+void displayDeviceMenu(int highlight) {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+
+  display.setCursor(0, 0);
+  display.println(F("SELECT DEVICE"));
+  display.drawLine(0, 10, 127, 10, SSD1306_WHITE);
+
+  for (int i = 0; i < numDevices && i < 4; i++) {
+    int yPos = 14 + i * 10;
+    display.setCursor(0, yPos);
+    display.print(i == highlight ? F(">") : F(" "));
+    display.print(F(" "));
+    display.print(devices[i].name);
+    if (i == selectedDevice) display.print(F(" *"));
+    if (devices[i].linkOk) {
+      display.setCursor(110, yPos);
+      display.print(F("OK"));
     }
   }
+
+  display.setCursor(0, 56);
+  display.print(F("release = pick"));
+  display.display();
 }
 
 void updateMainDisplay() {

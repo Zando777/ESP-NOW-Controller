@@ -38,6 +38,22 @@
 #define DEADZONE_THRESHOLD 50          // ADC units around center
 
 // ============================================
+// ESP-NOW CONTROL
+// ============================================
+
+#define CONTROL_PROTOCOL_VERSION 1     // must match receiver firmware
+#define CONTROL_DEFAULT_SPEED 200      // master speed sent to robot (0-255)
+#define HOLD_TO_MENU_MS 600            // hold right button this long to open device menu
+#define MENU_TILT_REPEAT_MS 250        // min time between highlight steps in menu
+#define LINK_OK_MS    600              // link shown OK if an ACK was seen within this
+#define LINK_DEAD_MS  800              // re-acquire channel after this much ACK silence
+
+// Joystick -> command axis polarity (flip to +1/-1 if a direction is reversed)
+#define SIGN_X   (+1)                  // left stick X  -> strafe
+#define SIGN_Y   (-1)                  // left stick Y  -> forward (inverted to match stick)
+#define SIGN_ROT (+1)                  // right stick X -> rotation
+
+// ============================================
 // ADC CONFIGURATION
 // ============================================
 

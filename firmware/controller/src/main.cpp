@@ -14,75 +14,31 @@
 
 void setup() {
   Serial.begin(SERIAL_BAUDRATE);
-  delay(100);
-  Serial.write(0xFF); // Marker to verify serial works
-  
-  // Now wait 10 seconds for serial monitor to connect
-  Serial.println("\n\n🔧 STARTUP: Waiting 10 seconds for serial monitor...");
-  Serial.flush();
-  for (int i = 0; i < 10; i++) {
-    Serial.print(".");
-    Serial.flush();
-    delay(1000);
-  }
-  Serial.println(" STARTING!\n");
-  Serial.flush();
-  
-  Serial.println("DEBUG: About to initialize I2C");
-  Serial.flush();
-  
+  delay(200);
+
   // Initialize I2C with custom pins
   Wire.begin(SDA_PIN, SCL_PIN);
-  
-  Serial.println("DEBUG: I2C initialized, about to init display");
-  Serial.flush();
-  
+
   // Initialize display
   initDisplay();
-  
-  Serial.println("DEBUG: Display initialized, showing welcome screen");
-  Serial.flush();
-  
   showWelcomeScreen();
-  
   unsigned long welcomeStartTime = millis();
-  
-  Serial.println("DEBUG: About to init joystick");
-  Serial.flush();
-  
+
   // Configure joystick pins
   initJoystick();
-  
-  // Show welcome message
+
   Serial.println("========================================");
   Serial.println("ESP-NOW Controller Started");
   Serial.println("========================================");
-  Serial.println("Pin Configuration:");
-  Serial.println("  OLED: SDA=GPIO8, SCL=GPIO9");
-  Serial.println("  Left Joystick: VRX=GPIO4, VRY=GPIO3, SW=GPIO5");
-  Serial.println("  Right Joystick: VRX=GPIO2, VRY=GPIO1, SW=GPIO0");
-  Serial.println("  Aux Switch: GPIO7");
-  Serial.println("========================================");
-  
-  Serial.println("DEBUG: About to load calibration");
-  Serial.flush();
-  
+
   // Load saved calibration from NVS
   loadCalibration();
-  
-  // Initialize ESP-NOW with explicit debug output
-  Serial.println("\n🔧 About to call initESPNow()...");
-  Serial.flush();
-  
-  // TEMPORARILY SKIP ESPNOW TO DEBUG SETUP
-  // initESPNow();
-  
-  Serial.println("✅ initESPNow() skipped for debugging\n");
-  Serial.flush();
-  
-  Serial.println("Setup complete. Ready for operation.");
-  Serial.println("Type 'HELP' for available commands.\n");
-  
+
+  // Initialize ESP-NOW (sets WiFi STA, finds the default device's channel)
+  initESPNow();
+
+  Serial.println("Setup complete. Type 'HELP' for commands.\n");
+
   // Wait for welcome screen to finish
   while (millis() - welcomeStartTime < WELCOME_SCREEN_DURATION) {
     delay(10);
@@ -93,19 +49,64 @@ void setup() {
 // MAIN LOOP
 // ============================================
 
+// Controller operating mode
+enum ControllerMode { MODE_DRIVE, MODE_SELECT };
+static ControllerMode mode = MODE_DRIVE;
+
+// Device-select menu state machine. Hold the right button alone to open the
+// menu, tilt the left stick up/down to move the highlight, release to pick.
+static void updateDeviceSelection() {
+  extern int leftY;
+  extern CalibrationData calibration;
+  static unsigned long rightHoldStart = 0;
+  static bool rightWasHeld = false;
+  static unsigned long lastTiltMs = 0;
+  static int highlight = 0;
+
+  if (mode == MODE_DRIVE) {
+    if (rightButton && !leftButton) {
+      if (!rightWasHeld) {
+        rightWasHeld = true;
+        rightHoldStart = millis();
+      } else if (millis() - rightHoldStart > HOLD_TO_MENU_MS) {
+        mode = MODE_SELECT;
+        highlight = selectedDevice;
+      }
+    } else {
+      rightWasHeld = false;
+    }
+  } else {  // MODE_SELECT
+    int8_t y = mapAxisSigned(leftY, calibration.leftYMin,
+                             calibration.leftYCenter, calibration.leftYMax);
+    if (millis() - lastTiltMs > MENU_TILT_REPEAT_MS) {
+      if (y > 50) {  // up = previous
+        highlight = (highlight - 1 + numDevices) % numDevices;
+        lastTiltMs = millis();
+      } else if (y < -50) {  // down = next
+        highlight = (highlight + 1) % numDevices;
+        lastTiltMs = millis();
+      }
+    }
+    // Release the right button to confirm the highlighted device.
+    if (!rightButton) {
+      mode = MODE_DRIVE;
+      rightWasHeld = false;
+      selectDevice(highlight);
+    }
+    displayDeviceMenu(highlight);
+  }
+}
+
 void loop() {
   // Handle serial commands (for setting MAC address, etc.)
   handleSerialCommands();
-  
+
   // Read all joystick inputs
   readJoystickInputs();
-  
-  // Send joystick data via ESP-NOW
-  sendJoystickData();
-  
+
   // Check for calibration mode trigger
   checkCalibrationTrigger();
-  
+
   // Handle calibration mode
   if (inCalibrationMode) {
     // If waiting for button release, show message and wait
@@ -134,13 +135,23 @@ void loop() {
     return;
   }
   
-  // Update main display
-  updateMainDisplay();
-  
-  // Serial debugging output
-  int leftXBar, leftYBar, rightXBar, rightYBar;
-  mapJoystickValues(leftXBar, leftYBar, rightXBar, rightYBar);
-  printJoystickDebug(leftXBar, leftYBar, rightXBar, rightYBar);
-  
-  delay(50); // Small delay to avoid flickering
+  // Device-select state machine (handles its own display when in the menu)
+  updateDeviceSelection();
+  if (mode == MODE_SELECT) {
+    delay(20);
+    return;  // do not drive while selecting; robot failsafe stops it
+  }
+
+  // DRIVE: stream control command at 50 Hz (sendControlCommand rate-limits
+  // internally). The OLED refresh is slow over I2C, so throttle it to ~10 Hz
+  // to avoid capping the command rate.
+  sendControlCommand();
+
+  static unsigned long lastDisplayMs = 0;
+  if (millis() - lastDisplayMs > 100) {
+    updateMainDisplay();
+    lastDisplayMs = millis();
+  }
+
+  delay(5);
 }

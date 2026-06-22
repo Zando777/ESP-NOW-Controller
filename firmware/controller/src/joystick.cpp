@@ -125,6 +125,17 @@ void mapJoystickValues(int& leftXBar, int& leftYBar, int& rightXBar, int& rightY
   rightYBar = constrain(rightYBar, ADC_MAP_MIN, ADC_MAP_MAX);
 }
 
+int8_t mapAxisSigned(int raw, int mn, int ctr, int mx) {
+  if (abs(raw - ctr) < DEADZONE_THRESHOLD) return 0;
+  long v;
+  if (raw < ctr) {
+    v = map(constrain(raw, mn, ctr), mn, ctr, -100, 0);
+  } else {
+    v = map(constrain(raw, ctr, mx), ctr, mx, 0, 100);
+  }
+  return (int8_t)constrain(v, -100, 100);
+}
+
 void printJoystickDebug(int leftXBar, int leftYBar, int rightXBar, int rightYBar) {
   extern CalibrationData calibration;
   extern unsigned long bothButtonsPressedStart;
