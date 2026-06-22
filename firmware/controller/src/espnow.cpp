@@ -189,7 +189,9 @@ void sendControlCommand() {
   cmd.x   = SIGN_X   * mapAxisSigned(leftX,  calibration.leftXMin,  calibration.leftXCenter,  calibration.leftXMax);
   cmd.y   = SIGN_Y   * mapAxisSigned(leftY,  calibration.leftYMin,  calibration.leftYCenter,  calibration.leftYMax);
   cmd.rot = SIGN_ROT * mapAxisSigned(rightX, calibration.rightXMin, calibration.rightXCenter, calibration.rightXMax);
-  cmd.speed = CONTROL_DEFAULT_SPEED;
+  // AUX engaged = speed boost (double, capped at the 255 PWM ceiling).
+  cmd.speed = auxSwitch ? (uint8_t)min(CONTROL_DEFAULT_SPEED * 2, 255)
+                        : CONTROL_DEFAULT_SPEED;
   cmd.buttons = (leftButton ? 0x01 : 0) | (rightButton ? 0x02 : 0) | (auxSwitch ? 0x04 : 0);
 
   uint8_t *mac = devices[selectedDevice].mac;
